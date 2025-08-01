@@ -22,8 +22,14 @@ window.onload = () => {
     scene = new THREE.Scene();
 
     // ライトを作る（太陽光のような指向性ライト）
+    // 日本が常に南中になるように光源を配置
     let dirLight = new THREE.DirectionalLight(0xffffff, 1);
-    dirLight.position.set(5, 3, 5);
+    const japanLongitude = 139.7; // 日本の経度（東経139.7度）
+    const angle = japanLongitude * Math.PI / 180;
+    const lightDistance = 500; // 光源までの距離
+    const lightX = lightDistance * Math.cos(angle);
+    const lightZ = lightDistance * Math.sin(angle);
+    dirLight.position.set(lightX, 100, lightZ); // Y座標を少し上に設定
     scene.add(dirLight);
 
     // 環境光を追加（全体を少し明るくする）
@@ -130,14 +136,16 @@ function createMeridian(longitude, radius) {
         points.push(new THREE.Vector3(x, y, z));
     }
 
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const material = new THREE.LineBasicMaterial({
+    // より太い線を作成するためにTubeGeometryを使用
+    const curve = new THREE.CatmullRomCurve3(points);
+    const geometry = new THREE.TubeGeometry(curve, points.length - 1, 0.3, 8, false);
+    const material = new THREE.MeshBasicMaterial({
         color: 0x888888,
         transparent: true,
         opacity: 0.6
     });
 
-    const line = new THREE.Line(geometry, material);
+    const line = new THREE.Mesh(geometry, material);
     line.userData = { type: 'meridian', longitude: longitude };
     return line;
 }
@@ -156,14 +164,16 @@ function createParallel(latitude, radius) {
         points.push(new THREE.Vector3(x, y, z));
     }
 
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const material = new THREE.LineBasicMaterial({
+    // より太い線を作成するためにTubeGeometryを使用
+    const curve = new THREE.CatmullRomCurve3(points);
+    const geometry = new THREE.TubeGeometry(curve, points.length - 1, 0.3, 8, true); // 緯線は閉じた円なのでtrueに設定
+    const material = new THREE.MeshBasicMaterial({
         color: 0x888888,
         transparent: true,
         opacity: 0.6
     });
 
-    const line = new THREE.Line(geometry, material);
+    const line = new THREE.Mesh(geometry, material);
     line.userData = { type: 'parallel', latitude: latitude };
     return line;
 }
@@ -205,7 +215,7 @@ function onMouseMove(event) {
     // 前回ホバーしていた線をリセット
     if (hoveredLine) {
         hoveredLine.material.color.setHex(hoveredLine.userData.latitude === 0 ? 0xff6666 : 0x888888);
-        hoveredLine.material.linewidth = 1;
+        hoveredLine.material.opacity = 0.6; // 透明度をリセット
         hoveredLine = null;
     }
 
@@ -213,7 +223,7 @@ function onMouseMove(event) {
     if (intersects.length > 0) {
         hoveredLine = intersects[0].object;
         hoveredLine.material.color.setHex(0xffff00); // 黄色でハイライト
-        hoveredLine.material.linewidth = 3;
+        hoveredLine.material.opacity = 1.0; // 不透明にしてより目立たせる
         renderer.domElement.style.cursor = 'pointer';
     } else {
         renderer.domElement.style.cursor = 'default';
@@ -289,8 +299,8 @@ function cutByParallel(latitude) {
 
 // アニメーションループ
 function animate() {
-    // 地球を自動回転させる（ゆっくりと）
-    earth.rotation.y += 0.002;
+    // 地球の自動回転を停止（コメントアウト）
+    // earth.rotation.y += 0.002;
 
     // OrbitControlsを更新
     controls.update();
