@@ -14,6 +14,11 @@ let clippingPlanes = [];
 let latitudeLabels = [], longitudeLabels = [];
 let latitudeLines = [], longitudeLines = [];
 
+// ドラッグ検出用の変数
+let mouseDownPosition = new THREE.Vector2();
+let isDragging = false;
+const DRAG_THRESHOLD = 5; // ピクセル単位での閾値
+
 // 初期化処理
 window.onload = () => {
     // カメラを作る
@@ -197,8 +202,37 @@ function createEquatorPlane() {
 
 // マウスイベントを設定
 function setupMouseEvents() {
+    renderer.domElement.addEventListener('mousedown', onMouseDown);
     renderer.domElement.addEventListener('mousemove', onMouseMove);
+    renderer.domElement.addEventListener('mouseup', onMouseUp);
     renderer.domElement.addEventListener('click', onMouseClick);
+}
+
+// マウスダウン時の処理
+function onMouseDown(event) {
+    // マウスダウン位置を記録
+    mouseDownPosition.set(event.clientX, event.clientY);
+    isDragging = false;
+
+    // ドラッグ開始時にホバー状態をクリア（意図しないクリックを防ぐため）
+    if (hoveredLine) {
+        hoveredLine.material.color.setHex(hoveredLine.userData.latitude === 0 ? 0xff6666 : 0x888888);
+        hoveredLine.material.opacity = 0.6;
+        hoveredLine = null;
+        renderer.domElement.style.cursor = 'default';
+    }
+}
+
+// マウスアップ時の処理
+function onMouseUp(event) {
+    // ドラッグ距離を計算
+    const currentPosition = new THREE.Vector2(event.clientX, event.clientY);
+    const dragDistance = mouseDownPosition.distanceTo(currentPosition);
+
+    // 閾値を超えた場合はドラッグと判定
+    if (dragDistance > DRAG_THRESHOLD) {
+        isDragging = true;
+    }
 }
 
 // マウス移動時の処理
@@ -234,6 +268,12 @@ function onMouseMove(event) {
 
 // マウスクリック時の処理
 function onMouseClick(event) {
+    // ドラッグ中の場合はクリック処理を無効化
+    if (isDragging) {
+        isDragging = false; // フラグをリセット
+        return;
+    }
+
     if (hoveredLine) {
         const userData = hoveredLine.userData;
 
