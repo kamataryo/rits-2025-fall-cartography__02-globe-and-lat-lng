@@ -436,11 +436,16 @@ function createLongitudeLabels(sliceLatitude) {
         const x = circleRadius * Math.cos(theta);
         const z = circleRadius * Math.sin(theta);
 
-        // 地球中心から経線への直線を作成
+        // 赤道面上の同経度の点を計算
+        const equatorX = radius * Math.cos(theta);  // 地球半径での赤道上の点
+        const equatorZ = radius * Math.sin(theta);
+
+        // 地球中心から赤道面を通って緯線上の点まで屈折する線を作成
         const lineGeometry = new THREE.BufferGeometry();
         const linePoints = [
-            new THREE.Vector3(0, 0, 0), // 地球中心
-            new THREE.Vector3(x, y, z) // 経線上の点
+            new THREE.Vector3(0, 0, 0),                    // 地球中心
+            new THREE.Vector3(equatorX, 0, equatorZ),      // 赤道面上の点
+            new THREE.Vector3(x, y, z)                     // 緯線上の最終点
         ];
         lineGeometry.setFromPoints(linePoints);
 
