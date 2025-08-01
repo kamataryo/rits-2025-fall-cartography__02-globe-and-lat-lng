@@ -11,6 +11,8 @@ let hoveredLine = null;
 let raycaster, mouse;
 let equatorPlane;
 let clippingPlanes = [];
+let latitudeLabels = [], longitudeLabels = [];
+let latitudeLines = [], longitudeLines = [];
 
 // 初期化処理
 window.onload = () => {
@@ -267,6 +269,9 @@ function sliceByMeridian(longitude) {
     // 地球のマテリアルを更新
     earth.material.clippingPlanes = clippingPlanes;
     earth.material.needsUpdate = true;
+
+    // 緯度ラベルと線を作成
+    createLatitudeLabels(longitude);
 }
 
 // 緯線による高緯度切断
@@ -295,6 +300,9 @@ function cutByParallel(latitude) {
     // 地球のマテリアルを更新
     earth.material.clippingPlanes = clippingPlanes;
     earth.material.needsUpdate = true;
+
+    // 経度ラベルと線を作成
+    createLongitudeLabels(latitude);
 }
 
 // アニメーションループ
@@ -324,6 +332,170 @@ function onKeyDown(event) {
     }
 }
 
+// 緯度ラベルと線を作成（経線スライス時）
+function createLatitudeLabels(sliceLongitude) {
+    clearAllLabels();
+
+    const radius = 100;
+    const labelRadius = 130;
+    const angle = sliceLongitude * Math.PI / 180;
+
+    // 緯度線とラベルを作成（-90°から90°まで10°間隔）
+    for (let lat = -90; lat <= 90; lat += 10) {
+        const phi = (90 - lat) * Math.PI / 180;
+        const y = radius * Math.cos(phi);
+        const r = radius * Math.sin(phi);
+
+        // 地球中心から緯線への直線を作成
+        const lineGeometry = new THREE.BufferGeometry();
+        const linePoints = [
+            new THREE.Vector3(0, 0, 0), // 地球中心
+            new THREE.Vector3(r * Math.cos(angle), y, r * Math.sin(angle)) // 緯線上の点
+        ];
+        lineGeometry.setFromPoints(linePoints);
+
+        const lineMaterial = new THREE.LineBasicMaterial({
+            color: 0xffff00,
+            transparent: true,
+            opacity: 0.8,
+            depthTest: false,
+            depthWrite: false
+        });
+
+        const line = new THREE.Line(lineGeometry, lineMaterial);
+        line.renderOrder = 999; // ラベルより少し後ろに描画
+        latitudeLines.push(line);
+        scene.add(line);
+
+        // ラベルを作成
+        const labelY = labelRadius * Math.cos(phi);
+        const labelR = labelRadius * Math.sin(phi);
+        const labelX = labelR * Math.cos(angle);
+        const labelZ = labelR * Math.sin(angle);
+
+        const labelText = lat === 0 ? '0°' : (lat > 0 ? `+${lat}°` : `${lat}°`);
+        const label = createTextLabel(labelText, labelX, labelY, labelZ);
+        latitudeLabels.push(label);
+        scene.add(label);
+    }
+}
+
+// 経度ラベルと線を作成（緯線スライス時）
+function createLongitudeLabels(sliceLatitude) {
+    clearAllLabels();
+
+    const radius = 100;
+    const labelRadius = 130;
+    const phi = (90 - sliceLatitude) * Math.PI / 180;
+    const y = radius * Math.cos(phi);
+    const circleRadius = radius * Math.sin(phi);
+
+    // 経度線とラベルを作成（-180°から180°まで10°間隔）
+    for (let lng = -180; lng <= 180; lng += 10) {
+        const theta = lng * Math.PI / 180;
+        const x = circleRadius * Math.cos(theta);
+        const z = circleRadius * Math.sin(theta);
+
+        // 地球中心から経線への直線を作成
+        const lineGeometry = new THREE.BufferGeometry();
+        const linePoints = [
+            new THREE.Vector3(0, 0, 0), // 地球中心
+            new THREE.Vector3(x, y, z) // 経線上の点
+        ];
+        lineGeometry.setFromPoints(linePoints);
+
+        const lineMaterial = new THREE.LineBasicMaterial({
+            color: 0xffff00,
+            transparent: true,
+            opacity: 0.8,
+            depthTest: false,
+            depthWrite: false
+        });
+
+        const line = new THREE.Line(lineGeometry, lineMaterial);
+        line.renderOrder = 999; // ラベルより少し後ろに描画
+        longitudeLines.push(line);
+        scene.add(line);
+
+        // ラベルを作成
+        const labelCircleRadius = labelRadius * Math.sin(phi);
+        const labelX = labelCircleRadius * Math.cos(theta);
+        const labelZ = labelCircleRadius * Math.sin(theta);
+        const labelY = labelRadius * Math.cos(phi);
+
+        const labelText = lng === 0 ? '0°' : (lng > 0 ? `+${lng}°` : `${lng}°`);
+        const label = createTextLabel(labelText, labelX, labelY, labelZ);
+        longitudeLabels.push(label);
+        scene.add(label);
+    }
+}
+
+// テキストラベルを作成
+function createTextLabel(text, x, y, z) {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.width = 128;
+    canvas.height = 64;
+
+    context.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+
+    context.fillStyle = 'white';
+    context.font = 'bold 24px Arial';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(text, canvas.width / 2, canvas.height / 2);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({
+        map: texture,
+        depthTest: false,
+        depthWrite: false
+    });
+    const sprite = new THREE.Sprite(material);
+
+    sprite.position.set(x, y, z);
+    sprite.scale.set(20, 10, 1);
+    sprite.renderOrder = 1000; // 最前面に描画
+
+    return sprite;
+}
+
+// 全てのラベルと線をクリア
+function clearAllLabels() {
+    // 緯度ラベルをクリア
+    latitudeLabels.forEach(label => {
+        scene.remove(label);
+        if (label.material.map) label.material.map.dispose();
+        label.material.dispose();
+    });
+    latitudeLabels.length = 0;
+
+    // 経度ラベルをクリア
+    longitudeLabels.forEach(label => {
+        scene.remove(label);
+        if (label.material.map) label.material.map.dispose();
+        label.material.dispose();
+    });
+    longitudeLabels.length = 0;
+
+    // 緯度線をクリア
+    latitudeLines.forEach(line => {
+        scene.remove(line);
+        line.geometry.dispose();
+        line.material.dispose();
+    });
+    latitudeLines.length = 0;
+
+    // 経度線をクリア
+    longitudeLines.forEach(line => {
+        scene.remove(line);
+        line.geometry.dispose();
+        line.material.dispose();
+    });
+    longitudeLines.length = 0;
+}
+
 // 地球をリセット
 function resetEarth() {
     // クリッピングプレーンをクリア
@@ -334,6 +506,9 @@ function resetEarth() {
     // 地球のマテリアルを更新
     earth.material.clippingPlanes = [];
     earth.material.needsUpdate = true;
+
+    // ラベルと線をクリア
+    clearAllLabels();
 }
 
 // ウィンドウリサイズ対応
