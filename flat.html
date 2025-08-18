@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>緯度経度グリッド地図</title>
+    <script src="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.css" rel="stylesheet" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        #map {
+            width: 100vw;
+            height: 100vh;
+        }
+        .zoom-info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="zoom-info">
+        <div>ズームレベル: <span id="zoom-level">0</span></div>
+        <div>グリッド間隔: <span id="grid-interval">10度</span></div>
+    </div>
+
+    <script>
+        // MapLibre GL JS地図の初期化
+        const map = new maplibregl.Map({
+            container: 'map',
+            style: 'https://demotiles.maplibre.org/style.json', // MapLibreデフォルトスタイル
+            center: [139.7, 35.7], // 東京を中心
+            zoom: 0
+        });
+
+        // ズーム情報表示要素
+        const zoomLevelElement = document.getElementById('zoom-level');
+        const gridIntervalElement = document.getElementById('grid-interval');
+
+        // グリッド設定
+        const gridConfigs = [
+            { minZoom: 0, maxZoom: 2.9, interval: 10, unit: '度', format: 'degree' },
+            { minZoom: 3, maxZoom: 6.9, interval: 1, unit: '度', format: 'degree' },
+            { minZoom: 7, maxZoom: 9.9, interval: 0.5, unit: '度', format: 'degree' },
+            { minZoom: 10, maxZoom: 12.9, interval: 1/6, unit: '分', format: 'minute' }, // 10分
+            { minZoom: 13, maxZoom: 15.9, interval: 1/60, unit: '分', format: 'minute' }, // 1分
+            { minZoom: 16, maxZoom: 17.9, interval: 1/360, unit: '秒', format: 'second' }, // 10秒
+            { minZoom: 18, maxZoom: 20, interval: 1/3600, unit: '秒', format: 'second' } // 1秒
+        ];
+
+        // 度分秒変換関数
+        function formatCoordinate(value, type, format) {
+            const absValue = Math.abs(value);
+            const degrees = Math.floor(absValue);
+            const minutes = Math.floor((absValue - degrees) * 60);
+            const seconds = Math.floor(((absValue - degrees) * 60 - minutes) * 60);
+
+            let direction;
+            if (type === 'lng') {
+                direction = value >= 0 ? '東経' : '西経';
+            } else {
+                direction = value >= 0 ? '北緯' : '南緯';
+            }
+
+            if (format === 'degree') {
+                return `${direction}${degrees}度`;
+            } else if (format === 'minute') {
+                if (minutes === 0) {
+                    return `${direction}${degrees}度`;
+                }
+                return `${direction}${degrees}度${minutes}分`;
+            } else if (format === 'second') {
+                if (minutes === 0 && seconds === 0) {
+                    return `${direction}${degrees}度`;
+                } else if (seconds === 0) {
+                    return `${direction}${degrees}度${minutes}分`;
+                }
+                return `${direction}${degrees}度${minutes}分${seconds}秒`;
+            }
+        }
+
+        // 現在のズームレベルに適したグリッド設定を取得
+        function getCurrentGridConfig(zoom) {
+            return gridConfigs.find(config => zoom >= config.minZoom && zoom <= config.maxZoom) || gridConfigs[0];
+        }
+
+        // 緯度線のGeoJSONを生成
+        function generateLatitudeLines(config, bounds) {
+            const features = [];
+            const interval = config.interval;
+
+            // 表示範囲を少し広げて計算
+            const minLat = Math.floor((bounds.getSouth() - 1) / interval) * interval;
+            const maxLat = Math.ceil((bounds.getNorth() + 1) / interval) * interval;
+
+            for (let lat = minLat; lat <= maxLat; lat += interval) {
+                if (lat >= -90 && lat <= 90) {
+                    features.push({
+                        type: 'Feature',
+                        properties: {
+                            type: 'latitude',
+                            value: lat,
+                            label: formatCoordinate(lat, 'lat', config.format)
+                        },
+                        geometry: {
+                            type: 'LineString',
+                            coordinates: [[-180, lat], [180, lat]]
+                        }
+                    });
+                }
+            }
+
+            return {
+                type: 'FeatureCollection',
+                features: features
+            };
+        }
+
+        // 経度線のGeoJSONを生成
+        function generateLongitudeLines(config, bounds) {
+            const features = [];
+            const interval = config.interval;
+
+            // 表示範囲を少し広げて計算
+            const minLng = Math.floor((bounds.getWest() - 1) / interval) * interval;
+            const maxLng = Math.ceil((bounds.getEast() + 1) / interval) * interval;
+
+            for (let lng = minLng; lng <= maxLng; lng += interval) {
+                if (lng >= -180 && lng <= 180) {
+                    features.push({
+                        type: 'Feature',
+                        properties: {
+                            type: 'longitude',
+                            value: lng,
+                            label: formatCoordinate(lng, 'lng', config.format)
+                        },
+                        geometry: {
+                            type: 'LineString',
+                            coordinates: [[lng, -85], [lng, 85]]
+                        }
+                    });
+                }
+            }
+
+            return {
+                type: 'FeatureCollection',
+                features: features
+            };
+        }
+
+        // グリッドラベルのGeoJSONを生成
+        function generateGridLabels(config, bounds) {
+            const features = [];
+            const interval = config.interval;
+
+            // 緯度ラベル
+            const minLat = Math.floor((bounds.getSouth() - 1) / interval) * interval;
+            const maxLat = Math.ceil((bounds.getNorth() + 1) / interval) * interval;
+
+            for (let lat = minLat; lat <= maxLat; lat += interval) {
+                if (lat >= -90 && lat <= 90) {
+                    // 表示範囲内の左から10%の位置に配置
+                    const labelLng = bounds.getWest() + (bounds.getEast() - bounds.getWest()) * 0.1;
+                    features.push({
+                        type: 'Feature',
+                        properties: {
+                            type: 'latitude-label',
+                            label: formatCoordinate(lat, 'lat', config.format)
+                        },
+                        geometry: {
+                            type: 'Point',
+                            coordinates: [labelLng, lat]
+                        }
+                    });
+                }
+            }
+
+            // 経度ラベル
+            const minLng = Math.floor((bounds.getWest() - 1) / interval) * interval;
+            const maxLng = Math.ceil((bounds.getEast() + 1) / interval) * interval;
+
+            for (let lng = minLng; lng <= maxLng; lng += interval) {
+                if (lng >= -180 && lng <= 180) {
+                    // 表示範囲内の下から10%の位置に配置
+                    const labelLat = bounds.getSouth() + (bounds.getNorth() - bounds.getSouth()) * 0.1;
+                    features.push({
+                        type: 'Feature',
+                        properties: {
+                            type: 'longitude-label',
+                            label: formatCoordinate(lng, 'lng', config.format)
+                        },
+                        geometry: {
+                            type: 'Point',
+                            coordinates: [lng, labelLat]
+                        }
+                    });
+                }
+            }
+
+            return {
+                type: 'FeatureCollection',
+                features: features
+            };
+        }
+
+        // グリッドを更新
+        function updateGrid() {
+            const zoom = map.getZoom();
+            const bounds = map.getBounds();
+            const config = getCurrentGridConfig(zoom);
+
+            // ズーム情報を更新
+            zoomLevelElement.textContent = zoom.toFixed(1);
+            gridIntervalElement.textContent = config.interval < 1 ?
+                `${Math.round(config.interval * 3600)}${config.unit}` :
+                `${config.interval}${config.unit}`;
+
+            // 既存のグリッドレイヤーを削除
+            if (map.getSource('latitude-lines')) {
+                map.removeLayer('latitude-lines');
+                map.removeSource('latitude-lines');
+            }
+            if (map.getSource('longitude-lines')) {
+                map.removeLayer('longitude-lines');
+                map.removeSource('longitude-lines');
+            }
+            if (map.getSource('grid-labels')) {
+                map.removeLayer('grid-labels');
+                map.removeSource('grid-labels');
+            }
+
+            // 新しいグリッドを追加
+            const latLines = generateLatitudeLines(config, bounds);
+            const lngLines = generateLongitudeLines(config, bounds);
+            const labels = generateGridLabels(config, bounds);
+
+            // 緯度線
+            map.addSource('latitude-lines', {
+                type: 'geojson',
+                data: latLines
+            });
+            map.addLayer({
+                id: 'latitude-lines',
+                type: 'line',
+                source: 'latitude-lines',
+                paint: {
+                    'line-color': '#ff6b6b',
+                    'line-width': 1,
+                    'line-opacity': 0.7
+                }
+            });
+
+            // 経度線
+            map.addSource('longitude-lines', {
+                type: 'geojson',
+                data: lngLines
+            });
+            map.addLayer({
+                id: 'longitude-lines',
+                type: 'line',
+                source: 'longitude-lines',
+                paint: {
+                    'line-color': '#4ecdc4',
+                    'line-width': 1,
+                    'line-opacity': 0.7
+                }
+            });
+
+            // ラベル（最上位レイヤーとして追加）
+            map.addSource('grid-labels', {
+                type: 'geojson',
+                data: labels
+            });
+            map.addLayer({
+                id: 'grid-labels',
+                type: 'symbol',
+                source: 'grid-labels',
+                layout: {
+                    'text-field': ['get', 'label'],
+                    'text-size': 14,
+                    'text-anchor': 'center',
+                    'text-offset': [0, 0]
+                },
+                paint: {
+                    'text-color': '#000000',
+                    'text-halo-color': '#ffffff',
+                    'text-halo-width': 3
+                }
+            });
+        }
+
+        // 地図読み込み完了後の処理
+        map.on('load', function() {
+            updateGrid();
+        });
+
+        // ズーム・移動時にグリッドを更新
+        map.on('zoom', updateGrid);
+        map.on('move', updateGrid);
+    </script>
+</body>
+</html>
