@@ -52,44 +52,32 @@
 
         // グリッド設定
         const gridConfigs = [
-            { minZoom: 0, maxZoom: 2.9, interval: 10, unit: '度', format: 'degree' },
-            { minZoom: 3, maxZoom: 6.9, interval: 1, unit: '度', format: 'degree' },
-            { minZoom: 7, maxZoom: 9.9, interval: 0.5, unit: '度', format: 'degree' },
-            { minZoom: 10, maxZoom: 12.9, interval: 1/6, unit: '分', format: 'minute' }, // 10分
-            { minZoom: 13, maxZoom: 15.9, interval: 1/60, unit: '分', format: 'minute' }, // 1分
-            { minZoom: 16, maxZoom: 17.9, interval: 1/360, unit: '秒', format: 'second' }, // 10秒
-            { minZoom: 18, maxZoom: 20, interval: 1/3600, unit: '秒', format: 'second' } // 1秒
+            { minZoom: 0, maxZoom: 2.9, interval: 10 },
+            { minZoom: 3, maxZoom: 6.9, interval: 1 },
+            { minZoom: 7, maxZoom: 9.9, interval: 0.5 },
+            { minZoom: 10, maxZoom: 12.9, interval: 1/6 }, // 10分
+            { minZoom: 13, maxZoom: 15.9, interval: 1/60 }, // 1分
+            { minZoom: 16, maxZoom: 17.9, interval: 1/360 }, // 10秒
+            { minZoom: 18, maxZoom: 20, interval: 1/3600 } // 1秒
         ];
 
-        // 度分秒変換関数
-        function formatCoordinate(value, type, format) {
-            const absValue = Math.abs(value);
-            const degrees = Math.floor(absValue);
-            const minutes = Math.floor((absValue - degrees) * 60);
-            const seconds = Math.floor(((absValue - degrees) * 60 - minutes) * 60);
+        // 度分秒変換関数（値から必要な単位まで表示。秒で丸めて浮動小数点誤差を吸収）
+        function formatDMS(value) {
+            const total = Math.round(Math.abs(value) * 3600);
+            const degrees = Math.floor(total / 3600);
+            const minutes = Math.floor(total % 3600 / 60);
+            const seconds = total % 60;
+            let text = `${degrees}度`;
+            if (minutes || seconds) text += `${minutes}分`;
+            if (seconds) text += `${seconds}秒`;
+            return text;
+        }
 
-            let direction;
-            if (type === 'lng') {
-                direction = value >= 0 ? '東経' : '西経';
-            } else {
-                direction = value >= 0 ? '北緯' : '南緯';
-            }
-
-            if (format === 'degree') {
-                return `${direction}${degrees}度`;
-            } else if (format === 'minute') {
-                if (minutes === 0) {
-                    return `${direction}${degrees}度`;
-                }
-                return `${direction}${degrees}度${minutes}分`;
-            } else if (format === 'second') {
-                if (minutes === 0 && seconds === 0) {
-                    return `${direction}${degrees}度`;
-                } else if (seconds === 0) {
-                    return `${direction}${degrees}度${minutes}分`;
-                }
-                return `${direction}${degrees}度${minutes}分${seconds}秒`;
-            }
+        function formatCoordinate(value, type) {
+            const direction = type === 'lng'
+                ? (value >= 0 ? '東経' : '西経')
+                : (value >= 0 ? '北緯' : '南緯');
+            return direction + formatDMS(value);
         }
 
         // 現在のズームレベルに適したグリッド設定を取得
@@ -113,7 +101,7 @@
                         properties: {
                             type: 'latitude',
                             value: lat,
-                            label: formatCoordinate(lat, 'lat', config.format)
+                            label: formatCoordinate(lat, 'lat')
                         },
                         geometry: {
                             type: 'LineString',
@@ -145,7 +133,7 @@
                         properties: {
                             type: 'longitude',
                             value: lng,
-                            label: formatCoordinate(lng, 'lng', config.format)
+                            label: formatCoordinate(lng, 'lng')
                         },
                         geometry: {
                             type: 'LineString',
@@ -178,7 +166,7 @@
                         type: 'Feature',
                         properties: {
                             type: 'latitude-label',
-                            label: formatCoordinate(lat, 'lat', config.format)
+                            label: formatCoordinate(lat, 'lat')
                         },
                         geometry: {
                             type: 'Point',
@@ -200,7 +188,7 @@
                         type: 'Feature',
                         properties: {
                             type: 'longitude-label',
-                            label: formatCoordinate(lng, 'lng', config.format)
+                            label: formatCoordinate(lng, 'lng')
                         },
                         geometry: {
                             type: 'Point',
@@ -224,9 +212,7 @@
 
             // ズーム情報を更新
             zoomLevelElement.textContent = zoom.toFixed(1);
-            gridIntervalElement.textContent = config.interval < 1 ?
-                `${Math.round(config.interval * 3600)}${config.unit}` :
-                `${config.interval}${config.unit}`;
+            gridIntervalElement.textContent = formatDMS(config.interval).replace(/^0度(0分)?/, '');
 
             // 既存のグリッドレイヤーを削除
             if (map.getSource('latitude-lines')) {
